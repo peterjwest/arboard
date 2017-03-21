@@ -58,9 +58,9 @@ ARController.getUserMediaThreeScene({
     var markers = [];
     for (var i = 0; i < 512; i++) {
       var marker = new THREE.Object3D();
-      marker.id = i;
-      //marker.matrixAutoUpdate = false;
+      marker.markerId = i;
       marker.position.z = -5;
+      marker.old = new THREE.Object3D();
 
       var box = new THREE.Mesh(
         new THREE.BoxGeometry(0.8, 0.8, 0.3),
@@ -74,7 +74,23 @@ ARController.getUserMediaThreeScene({
       markers.push(marker);
     }
 
+    // var testMarker = new THREE.Mesh(
+    //   new THREE.BoxGeometry(0.8, 0.8, 0.3),
+    //   normalMaterial
+    // );
+    // testMarker.position.z = 10;
+    // testMarker.rotation.x = -0.3;
+    // testMarker.rotation.y = 0.3;
+    // scene.scene.add(testMarker);
+
+    var dynamicTriggeed = false;
+    var templateTriggered = false;
+    var oldDynamic = new THREE.Object3D();
+    var oldTemplate = new THREE.Object3D();
+
     controller.addEventListener('getMarker', function(ev) {
+      if (ev.data.marker.idMatrix !== 1 && ev.data.marker.idMatrix !== 2) return;
+      if (ev.data.marker.idMatrix === 2 && templateTriggered == true) return;
       if (ev.data.marker.idMatrix >= 0 && ev.data) {
         var marker = markers[ev.data.marker.idMatrix];
         marker.matrix.elements.set(ev.data.matrix);
@@ -82,18 +98,34 @@ ARController.getUserMediaThreeScene({
         marker.active = 5;
         marker.setVisible(true);
       }
+      if (!dynamicTriggeed && ev.data.marker.idMatrix === 1) {
+        dynamicTriggeed = true;
+        oldDynamic.position.copy(marker.position);
+        oldDynamic.quaternion.copy(marker.quaternion);
+        console.log(oldDynamic);
+      }
+      if (ev.data.marker.idMatrix === 2) {
+        templateTriggered = true;
+        oldTemplate.position.copy(marker.position);
+        oldTemplate.quaternion.copy(marker.quaternion);
+      }
     });
-
-    document.getElementById('debug').addEventListener('click', function() {
-      var actives = markers.filter(function(marker) {
-        return marker.active;
-      }).map(function(marker) {
-        console.log(marker.rotation);
-      });
-    });
-
+    
     var tick = function() {
       scene.process();
+
+      if (markers[1].active > 0) {
+        markers[2].quaternion.copy(
+          oldDynamic.quaternion.clone().inverse()
+          .premultiply(markers[1].quaternion)
+          .multiply(oldTemplate.quaternion)
+        );
+        markers[2].position.copy(
+          oldTemplate.position.clone().sub(oldDynamic.position).applyQuaternion(
+            oldDynamic.quaternion.clone().inverse().premultiply(markers[1].quaternion)
+          ).add(markers[1].position)
+        );
+      }
 
       var actives = markers.filter(function(marker) {
         return marker.active;
@@ -127,24 +159,27 @@ ARController.getUserMediaThreeScene({
         var groups = [actives, []];
       }
 
-      groups[0].map(function(marker) {
-        marker.box.material = redMaterial;
-      });
-      groups[1].map(function(marker) {
-        marker.box.material = blueMaterial;
-        //marker.box.quaternion.copy(marker.quaternion).conjugate().multiply(groups[0][0].quaternion);
-        var position = marker.position.clone().multiplyScalar(1).normalize();
-        var unit = new THREE.Vector3(0, 0, 1).applyQuaternion(marker.quaternion);
-        var angle = Math.PI - Math.acos(position.clone().dot(unit));
-        var centerRotation = new THREE.Quaternion().setFromAxisAngle(position.clone().cross(unit).normalize(), angle * 2);
-        marker.quaternion.premultiply(centerRotation);
-      });
+      // groups[0].map(function(marker) {
+      //   marker.box.material = redMaterial;
+      // });
+      // groups[1].map(function(marker) {
+      //   marker.box.material = blueMaterial;
+      //   //marker.box.quaternion.copy(marker.quaternion).conjugate().multiply(groups[0][0].quaternion);
+      //   var position = marker.position.clone().multiplyScalar(1).normalize();
+      //   var unit = new THREE.Vector3(0, 0, 1).applyQuaternion(marker.quaternion);
+      //   var angle = Math.PI - Math.acos(position.clone().dot(unit));
+      //   var centerRotation = new THREE.Quaternion().setFromAxisAngle(position.clone().cross(unit).normalize(), angle * 2);
+      //   marker.quaternion.premultiply(centerRotation);
+      // });
 
       scene.renderOn(renderer);
 
       markers.map(function(marker) {
-        if (marker.active > 0) marker.active--;
-        else marker.setVisible(false);
+        // if (marker.active > 0) marker.active--;
+        // else marker.setVisible(false);
+
+        marker.old.position.copy(marker.position);
+        marker.old.quaternion.copy(marker.quaternion);
       });
 
       requestAnimationFrame(tick);
