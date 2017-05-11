@@ -66,7 +66,7 @@ ARController.getUserMediaThreeScene({
         new THREE.BoxGeometry(0.8, 0.8, 0.3),
         normalMaterial
       );
-      //box.position.z = -0.5;
+      box.position.z = 0.15;
       marker.add(box);
       marker.box = box;
 
@@ -74,61 +74,59 @@ ARController.getUserMediaThreeScene({
       markers.push(marker);
     }
 
-    // var testMarker = new THREE.Mesh(
-    //   new THREE.BoxGeometry(0.8, 0.8, 0.3),
-    //   normalMaterial
-    // );
-    // testMarker.position.z = 10;
-    // testMarker.rotation.x = -0.3;
-    // testMarker.rotation.y = 0.3;
-    // scene.scene.add(testMarker);
-
-    var dynamicTriggeed = false;
-    var templateTriggered = false;
-    var oldDynamic = new THREE.Object3D();
-    var oldTemplate = new THREE.Object3D();
-
     controller.addEventListener('getMarker', function(ev) {
-      if (ev.data.marker.idMatrix !== 1 && ev.data.marker.idMatrix !== 2) return;
-      if (ev.data.marker.idMatrix === 2 && templateTriggered == true) return;
+      if (ev.data.marker.idMatrix > 3 || ev.data.marker.idMatrix < 1) return;
+
       if (ev.data.marker.idMatrix >= 0 && ev.data) {
         var marker = markers[ev.data.marker.idMatrix];
+
+        // Marker position
+        ev.data.marker.pos;
+
         marker.matrix.elements.set(ev.data.matrix);
         marker.matrix.decompose(marker.position, marker.quaternion, new THREE.Vector3());
-        marker.active = 5;
+        marker.active = true;
         marker.setVisible(true);
       }
-      if (!dynamicTriggeed && ev.data.marker.idMatrix === 1) {
-        dynamicTriggeed = true;
-        oldDynamic.position.copy(marker.position);
-        oldDynamic.quaternion.copy(marker.quaternion);
-        console.log(oldDynamic);
-      }
-      if (ev.data.marker.idMatrix === 2) {
-        templateTriggered = true;
-        oldTemplate.position.copy(marker.position);
-        oldTemplate.quaternion.copy(marker.quaternion);
-      }
     });
-    
-    var tick = function() {
-      scene.process();
 
-      if (markers[1].active > 0) {
-        markers[2].quaternion.copy(
-          oldDynamic.quaternion.clone().inverse()
-          .premultiply(markers[1].quaternion)
-          .multiply(oldTemplate.quaternion)
-        );
-        markers[2].position.copy(
-          oldTemplate.position.clone().sub(oldDynamic.position).applyQuaternion(
-            oldDynamic.quaternion.clone().inverse().premultiply(markers[1].quaternion)
-          ).add(markers[1].position)
-        );
-      }
+    var tick = function() {
+      requestAnimationFrame(tick);
+
+      markers.map(function(marker) {
+        marker.active = false;
+      })
+
+      scene.process();
 
       var actives = markers.filter(function(marker) {
         return marker.active;
+      });
+
+      var inactives = markers.filter(function(marker) {
+        return !marker.active;
+      });
+
+      if (actives.length > 0) {
+        // TODO: Better selection of active marker - averages?
+        var active = actives[0];
+        inactives.map(function(inactive) {
+          inactive.quaternion.copy(
+            active.old.quaternion.clone().inverse()
+            .premultiply(active.quaternion)
+            .multiply(inactive.old.quaternion)
+          );
+          inactive.position.copy(
+            inactive.old.position.clone().sub(active.old.position).applyQuaternion(
+              active.old.quaternion.clone().inverse().premultiply(active.quaternion)
+            ).add(active.position)
+          );
+        });
+      }
+
+      markers.map(function(marker) {
+        marker.old.position.copy(marker.position);
+        marker.old.quaternion.copy(marker.quaternion);
       });
 
       var index = actives.map(function(marker) {
@@ -173,16 +171,6 @@ ARController.getUserMediaThreeScene({
       // });
 
       scene.renderOn(renderer);
-
-      markers.map(function(marker) {
-        // if (marker.active > 0) marker.active--;
-        // else marker.setVisible(false);
-
-        marker.old.position.copy(marker.position);
-        marker.old.quaternion.copy(marker.quaternion);
-      });
-
-      requestAnimationFrame(tick);
     };
 
     tick();
